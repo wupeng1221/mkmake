@@ -1,0 +1,10 @@
+[package]
+name = "cmake_proj_init"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[[bin]]
+name = "mkmake"
+path = "src/main.rs"
