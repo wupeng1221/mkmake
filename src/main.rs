@@ -1,3 +1,4 @@
+use clap::Parser;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -53,37 +54,65 @@ ADD_EXECUTABLE(@app_name@ ${SRC_FILES} ${INC_FILES})
 TARGET_INCLUDE_DIRECTORIES(@app_name@ PRIVATE ${CMAKE_SOURCE_DIR}/include)
 "#;
 
+const XMAKE_LUA: &str = r#"
+set_project("@app_name@")
+set_languages("cxx17")
+
+target("@app_name@")
+    set_kind("binary")
+    add_files("src/**.cpp", "src/**.c")
+    add_includedirs("src")
+    set_targetdir("bin")
+"#;
+
+#[derive(Parser)]
+#[command(
+    name = "mkmake",
+    version,
+    about = "Create C++ demo project. Must specify --cmake or --xmake."
+)]
+#[command(group(
+    clap::ArgGroup::new("build_system")
+        .required(true)
+        .args(["cmake", "xmake"])
+))]
+struct Cli {
+    #[arg(short, long)]
+    cmake: bool,
+
+    #[arg(short, long)]
+    xmake: bool,
+
+    #[arg(required = true)]
+    name: String,
+}
+
 fn main() {
-    let proj_name = std::env::args().nth(1).expect("no project name given");
+    let cli = Cli::parse();
 
-    let curr_dir = std::env::current_dir().expect("failed to get current directory");
-    let proj_path = curr_dir.join(&proj_name);
+    let name = cli.name;
 
-    if !proj_path.exists() {
-        fs::create_dir_all(&proj_path).expect("failed to create project directory");
-        println!("project directory created: {:?}", proj_path.display());
+    let proj = std::env::current_dir().unwrap().join(&name);
+    fs::create_dir_all(proj.join("src")).unwrap();
+
+    File::create(proj.join("src/main.cpp"))
+        .unwrap()
+        .write_all(CPP_DRAFT.as_bytes())
+        .unwrap();
+
+    if cli.xmake {
+        let content = XMAKE_LUA.replace("@app_name@", &name);
+        File::create(proj.join("xmake.lua"))
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+        println!("✅ xmake project: {}", name);
     } else {
-        println!(
-            "project directory already exists: {:?}",
-            proj_path.display()
-        );
+        let content = CMAKELISTS_DRAFT.replace("@app_name@", &name);
+        File::create(proj.join("CMakeLists.txt"))
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+        println!("✅ cmake project: {}", name);
     }
-
-    let src_path = proj_path.join("src");
-    fs::create_dir_all(&src_path).expect("failed to create src directory");
-    println!("src directory created: {:?}", src_path.display());
-
-    let file_path = src_path.join("main.cpp");
-    let mut cpp_file = File::create(&file_path).expect("failed to create file");
-    writeln!(cpp_file, "{}", CPP_DRAFT).expect("failed to init cpp demo file");
-
-    let cmakelists_path = proj_path.join("CMakeLists.txt");
-    let mut cmakelists_file =
-        File::create(&cmakelists_path).expect("failed to create CMakeLists.txt");
-    writeln!(
-        cmakelists_file,
-        "{}",
-        CMAKELISTS_DRAFT.replace("@app_name@", &proj_name)
-    )
-    .expect("failed to init CMakeLists.txt");
 }
